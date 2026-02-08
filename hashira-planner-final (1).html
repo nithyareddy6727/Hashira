@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>柱 HASHIRA - Demon Slayer Planner</title>
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        * { -webkit-tap-highlight-color: transparent; }
+        body { margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; background: #000; overflow-x: hidden; }
+        input, select, textarea, button { font-size: 16px !important; }
+        
+        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; 
+                 background-color: rgba(0,0,0,0.8); }
+        .modal.active { display: flex; align-items: center; justify-content: center; }
+        .modal-content { background: #1a1a1a; border: 2px solid #dc2626; padding: 20px; max-width: 500px; width: 90%; }
+        
+        @keyframes float-ember {
+            0%, 100% { transform: translateY(0) translateX(0); opacity: 0; }
+            10% { opacity: 1; }
+            90% { opacity: 1; }
+            100% { transform: translateY(-100vh) translateX(var(--drift)); opacity: 0; }
+        }
+        .ember { position: absolute; width: 2px; height: 2px; background: #f97316; border-radius: 50%; 
+                 animation: float-ember linear infinite; pointer-events: none; }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+    
+    <!-- Modal -->
+    <div id="modal" class="modal">
+        <div class="modal-content">
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script>
+        // ==================== STORAGE ====================
+        const storage = {
+            get: (key, def) => {
+                try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(def)); }
+                catch { return def; }
+            },
+            set: (key, val) => { 
+                try { localStorage.setItem(key, JSON.stringify(val)); } 
+                catch (e) { console.error('Storage error:', e); }
+            }
+        };
+
+        // ==================== STATE ====================
+        let state = {
+            page: 'home',
+            currentMonth: new Date().getMonth(),
+            currentYear: new Date().getFullYear(),
+            
+            subjects: storage.get('subjects', []),
+            collegeThings: storage.get('collegeThings', []),
+            careerGoals: storage.get('careerGoals', []),
+            funThings: storage.get('funThings', []),
+            otherThings: storage.get('otherThings', []),
+            
+            totalAmount: storage.get('totalAmount', 10000),
+            expenses: storage.get('expenses', []),
+            iOwe: storage.get('iOwe', []),
+            theyOwe: storage.get('theyOwe', [])
+        };
+
+        function save(key) { storage.set(key, state[key]); }
+        function nav(page) { state.page = page; render(); }
+
+        // ==================== HELPERS ====================
+        function calcRemaining() {
+            const spent = state.expenses.reduce((s, e) => s + parseFloat(e.amount || 0), 0);
+            return state.totalAmount - spent;
+        }
+
+        function getDaysInMonth(month, year) {
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+            return {
+                daysInMonth: lastDay.getDate(),
+                startDay: firstDay.getDay(),
+                month: firstDay.toLocaleString('en-US', {month: 'long', year: 'numeric'})
+            };
+        }
+
+        function getTasksForDate(day) {
+            const dateStr = `${state.currentYear}-${String(state.currentMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+            const tasks = [];
+            state.collegeThings.forEach(t => { if (t.deadline === dateStr) tasks.push({...t, cat: 'study'}); });
+            state.careerGoals.forEach(t => { if (t.deadline === dateStr) tasks.push({...t, cat: 'career'}); });
+            return tasks;
+        }
+
+        // ==================== MODAL ====================
+        function showModal(html) {
+            document.getElementById('modal-body').innerHTML = html;
+            document.getElementById('modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('modal').classList.remove('active');
+        }
+
+        window.onclick = function(event) {
+            const modal = document.getElementById('modal');
+            if (event.target == modal) closeModal();
+        }
+
+        // ==================== RENDER HOME ====================
+        function renderHome() {
+            return `
+                <div class="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+                    ${renderEmbers()}
+                    <div class="max-w-7xl w-full z-10 relative">
+                        <div class="text-center mb-12">
+                            <div style="font-size: clamp(4rem, 15vw, 8rem); font-weight: 900; background: linear-gradient(to right, #fb923c, #dc2626, #7f1d1d); 
+                                -webkit-background-clip: text; -webkit-text-fill-color: transparent; 
+                                text-shadow: 0 0 40px rgba(239,68,68,0.9); letter-spacing: 0.1em;">柱</div>
+                            <div class="mt-8 flex items-center justify-center gap-4">
+                                <div class="h-px w-32 bg-gradient-to-r from-transparent via-red-600 to-transparent"></div>
+                                <div class="text-red-600 font-bold text-sm tracking-widest">鬼殺隊</div>
+                                <div class="h-px w-32 bg-gradient-to-r from-transparent via-red-600 to-transparent"></div>
+                            </div>
+                            <p class="text-red-600 text-2xl font-bold mt-2">HASHIRA</p>
+                            <p class="text-gray-400 mt-2 text-sm tracking-widest">DEMON SLAYER CORPS SYSTEM</p>
+                        </div>
+
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mb-4 md:mb-6">
+                            ${renderCard('calendar', '📅', 'CALENDAR', '炎の呼吸', 'Flame Breathing', 'red', true)}
+                            ${renderCard('finance', '💰', 'FINANCE', '雷の呼吸', 'Thunder Breathing', 'yellow', true)}
+                        </div>
+
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-6">
+                            ${renderCard('study', '💧', 'STUDY', '水の呼吸', 'Water Breathing', 'blue')}
+                            ${renderCard('career', '🎯', 'CAREER', '獣の呼吸', 'Beast Breathing', 'purple')}
+                            ${renderCard('fun', '🌙', 'FUN', '月の呼吸', 'Moon Breathing', 'indigo')}
+                            ${renderCard('others', '🌪️', 'TASKS', '風の呼吸', 'Wind Breathing', 'teal')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderEmbers() {
+            let html = '';
+            for (let i = 0; i < 15; i++) {
+                const left = Math.random() * 100;
+                const duration = 5 + Math.random() * 10;
+                const delay = Math.random() * 5;
+                const drift = (Math.random() - 0.5) * 100;
+                html += `<div class="ember" style="left: ${left}%; --drift: ${drift}px; animation-duration: ${duration}s; animation-delay: ${delay}s;"></div>`;
+            }
+            return html;
+        }
+
+        function renderCard(page, emoji, title, jp, en, color, large = false) {
+            return `
+                <button onclick="nav('${page}')" class="group relative bg-gradient-to-br from-gray-900 via-${color}-950 to-black 
+                    border-2 border-${color}-900 hover:border-${color}-600 ${large ? 'p-8 md:p-10' : 'p-6 md:p-8'} transition-all">
+                    <div class="${large ? 'text-6xl' : 'text-5xl md:text-6xl'} mb-3 md:mb-4">${emoji}</div>
+                    <h2 class="${large ? 'text-2xl md:text-3xl' : 'text-lg md:text-2xl'} font-bold text-gray-100 mb-1 md:mb-2 tracking-wide">${title}</h2>
+                    <p class="text-xs ${large ? 'md:text-sm' : ''} text-${color}-500 font-semibold mb-1">${jp}</p>
+                    <p class="text-xs text-gray-500 uppercase ${large ? '' : 'hidden md:block'}">${en}</p>
+                    <div class="absolute top-0 right-0 w-16 md:w-20 h-16 md:h-20 border-t-2 border-r-2 border-${color}-600/30 group-hover:border-${color}-600"></div>
+                    <div class="absolute bottom-0 left-0 w-16 md:w-20 h-16 md:h-20 border-b-2 border-l-2 border-${color}-600/30 group-hover:border-${color}-600"></div>
+                </button>
+            `;
+        }
+
+        // ==================== RENDER HEADER ====================
+        function renderHeader() {
+            return `
+                <div class="mb-6 flex items-center gap-4">
+                    <button onclick="nav('home')" class="bg-gray-900 border-2 border-red-900 p-3 hover:border-red-600 transition-all">
+                        <span class="text-red-600 text-2xl">🏠</span>
+                    </button>
+                    <div class="flex-1 bg-gray-900 border-2 border-red-900 p-4 flex items-center justify-center">
+                        <div class="text-center">
+                            <h1 class="text-2xl md:text-3xl font-black" style="background: linear-gradient(to right, #fb923c, #dc2626, #7f1d1d);
+                                -webkit-background-clip: text; -webkit-text-fill-color: transparent;">柱 HASHIRA</h1>
+                            <p class="text-xs text-red-600 font-semibold tracking-widest">鬼殺隊</p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==================== STUDY PAGE ====================
+        function renderStudy() {
+            return `
+                <div class="space-y-6">
+                    <!-- Subjects -->
+                    <div class="bg-gradient-to-br from-gray-900 via-blue-950 to-black border-2 border-blue-900 overflow-hidden">
+                        <div class="bg-gradient-to-r from-blue-900/30 to-black border-b border-blue-800 p-6 flex items-center justify-between">
+                            <div>
+                                <h2 class="text-3xl font-bold text-gray-100 tracking-wide">SUBJECTS</h2>
+                                <p class="text-xs text-blue-500 font-semibold mt-1">水の呼吸 • Water Breathing</p>
+                            </div>
+                            <button onclick="addSubject()" class="bg-blue-900/50 hover:bg-blue-800 text-gray-100 px-4 md:px-6 py-2 border border-blue-700 font-semibold">
+                                ➕ ADD
+                            </button>
+                        </div>
+                        <div class="p-6 space-y-4">
+                            ${state.subjects.map(s => `
+                                <div class="border border-blue-900 bg-gradient-to-br from-blue-950/20 to-black/50 p-5">
+                                    <div class="flex items-center justify-between mb-4">
+                                        <h3 class="font-bold text-xl text-gray-100 flex items-center gap-2">
+                                            <div class="w-1 h-6 bg-blue-600"></div>
+                                            ${s.name}
+                                        </h3>
+                                        <button onclick="deleteSubject(${s.id})" class="text-blue-600 hover:text-blue-500">🗑️</button>
+                                    </div>
+                                    <div class="space-y-2 mb-4">
+                                        ${(s.todos || []).map(t => `
+                                            <div class="flex items-center gap-3 bg-black/30 p-3 border border-gray-800">
+                                                <input type="checkbox" ${t.completed ? 'checked' : ''} 
+                                                    onchange="toggleSubjectTodo(${s.id}, ${t.id})"
+                                                    class="w-5 h-5 cursor-pointer">
+                                                <span class="flex-1 text-gray-300 ${t.completed ? 'line-through text-gray-600' : ''}">${t.text}</span>
+                                                <button onclick="deleteSubjectTodo(${s.id}, ${t.id})" class="text-blue-800 hover:text-blue-600">🗑️</button>
+                                            </div>
+                                        `).join('')}
+                                    </div>
+                                    <button onclick="addSubjectTodo(${s.id})" class="text-blue-600 hover:text-blue-500 text-sm font-semibold">
+                                        + ADD TASK
+                                    </button>
+                                </div>
+                            `).join('')}
+                            ${state.subjects.length === 0 ? '<p class="text-center text-gray-600 py-12">NO SUBJECTS YET</p>' : ''}
+                        </div>
+                    </div>
+
+                    <!-- College Things -->
+                    <div class="bg-gradient-to-br from-gray-900 via-blue-950 to-black border-2 border-blue-900 overflow-hidden">
+                        <div class="bg-gradient-to-r from-blue-900/30 to-black border-b border-blue-800 p-6 flex items-center justify-between">
+                            <div>
+                                <h2 class="text-3xl font-bold text-gray-100 tracking-wide">COLLEGE TASKS</h2>
+                                <p class="text-xs text-blue-500 font-semibold mt-1">学業の任務</p>
+                            </div>
+                            <button onclick="addCollegeThing()" class="bg-blue-900/50 hover:bg-blue-800 text-gray-100 px-4 md:px-6 py-2 border border-blue-700 font-semibold">
+                                ➕ ADD
+                            </button>
+                        </div>
+                        <div class="p-6 space-y-3">
+                            ${state.collegeThings.map(c => `
+                                <div class="flex items-center gap-4 bg-gradient-to-r from-blue-950/20 to-black/50 p-4 border border-blue-900">
+                                    <input type="checkbox" ${c.completed ? 'checked' : ''} 
+                                        onchange="toggleCollegeThing(${c.id})"
+                                        class="w-5 h-5 cursor-pointer">
+                                    <div class="flex-1">
+                                        <p class="text-gray-200 font-medium ${c.completed ? 'line-through text-gray-600' : ''}">${c.text}</p>
+                                        <p class="text-sm text-blue-600 font-semibold mt-1">${new Date(c.deadline).toLocaleDateString()}</p>
+                                    </div>
+                                    <button onclick="deleteCollegeThing(${c.id})" class="text-blue-600 hover:text-blue-500">🗑️</button>
+                                </div>
+                            `).join('')}
+                            ${state.collegeThings.length === 0 ? '<p class="text-center text-gray-600 py-12">NO COLLEGE TASKS</p>' : ''}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==================== CAREER PAGE ====================
+        function renderCareer() {
+            const weekGoals = state.careerGoals.filter(g => g.type === 'week');
+            const monthGoals = state.careerGoals.filter(g => g.type === 'month');
+
+            return `
+                <div class="bg-gradient-to-br from-gray-900 via-purple-950 to-black border-2 border-purple-900 overflow-hidden">
+                    <div class="bg-gradient-to-r from-purple-900/30 to-black border-b border-purple-800 p-6 flex items-center justify-between">
+                        <div>
+                            <h2 class="text-3xl font-bold text-gray-100 tracking-wide">CAREER GOALS</h2>
+                            <p class="text-xs text-purple-500 font-semibold mt-1">獣の呼吸 • Beast Breathing</p>
+                        </div>
+                        <button onclick="addCareerGoal()" class="bg-purple-900/50 hover:bg-purple-800 text-gray-100 px-4 md:px-6 py-2 border border-purple-700 font-semibold">
+                            ➕ ADD
+                        </button>
+                    </div>
+                    <div class="p-6 space-y-8">
+                        <div>
+                            <h3 class="font-bold text-xl text-gray-100 mb-4 flex items-center gap-2">
+                                <div class="w-1 h-6 bg-purple-600"></div>
+                                WEEKLY GOALS
+                            </h3>
+                            <div class="space-y-3">
+                                ${weekGoals.map(g => `
+                                    <div class="flex items-center gap-4 bg-gradient-to-r from-purple-950/20 to-black/50 p-4 border border-purple-900">
+                                        <input type="checkbox" ${g.completed ? 'checked' : ''} 
+                                            onchange="toggleCareerGoal(${g.id})"
+                                            class="w-5 h-5 cursor-pointer">
+                                        <div class="flex-1">
+                                            <p class="text-gray-200 font-medium ${g.completed ? 'line-through text-gray-600' : ''}">${g.text}</p>
+                                            <p class="text-sm text-purple-600 font-semibold mt-1">${new Date(g.deadline).toLocaleDateString()}</p>
+                                        </div>
+                                        <button onclick="deleteCareerGoal(${g.id})" class="text-purple-600 hover:text-purple-500">🗑️</button>
+                                    </div>
+                                `).join('')}
+                                ${weekGoals.length === 0 ? '<p class="text-gray-600 text-sm italic">No weekly goals</p>' : ''}
+                            </div>
+                        </div>
+
+                        <div>
+                            <h3 class="font-bold text-xl text-gray-100 mb-4 flex items-center gap-2">
+                                <div class="w-1 h-6 bg-purple-600"></div>
+                                MONTHLY GOALS
+                            </h3>
+                            <div class="space-y-3">
+                                ${monthGoals.map(g => `
+                                    <div class="flex items-center gap-4 bg-gradient-to-r from-purple-950/20 to-black/50 p-4 border border-purple-900">
+                                        <input type="checkbox" ${g.completed ? 'checked' : ''} 
+                                            onchange="toggleCareerGoal(${g.id})"
+                                            class="w-5 h-5 cursor-pointer">
+                                        <div class="flex-1">
+                                            <p class="text-gray-200 font-medium ${g.completed ? 'line-through text-gray-600' : ''}">${g.text}</p>
+                                            <p class="text-sm text-purple-600 font-semibold mt-1">${new Date(g.deadline).toLocaleDateString()}</p>
+                                        </div>
+                                        <button onclick="deleteCareerGoal(${g.id})" class="text-purple-600 hover:text-purple-500">🗑️</button>
+                                    </div>
+                                `).join('')}
+                                ${monthGoals.length === 0 ? '<p class="text-gray-600 text-sm italic">No monthly goals</p>' : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==================== FUN PAGE ====================
+        function renderFun() {
+            return `
+                <div class="bg-gradient-to-br from-gray-900 via-indigo-950 to-black border-2 border-indigo-900 overflow-hidden">
+                    <div class="bg-gradient-to-r from-indigo-900/30 to-black border-b border-indigo-800 p-6 flex items-center justify-between">
+                        <div>
+                            <h2 class="text-3xl font-bold text-gray-100 tracking-wide">RECREATION</h2>
+                            <p class="text-xs text-indigo-400 font-semibold mt-1">月の呼吸 • Moon Breathing</p>
+                        </div>
+                        <button onclick="addFunThing()" class="bg-indigo-900/50 hover:bg-indigo-800 text-gray-100 px-4 md:px-6 py-2 border border-indigo-700 font-semibold">
+                            ➕ ADD
+                        </button>
+                    </div>
+                    <div class="p-6 space-y-3">
+                        ${state.funThings.map(f => `
+                            <div class="flex items-center gap-4 bg-gradient-to-r from-indigo-950/20 to-black/50 p-4 border border-indigo-900">
+                                <input type="checkbox" ${f.completed ? 'checked' : ''} 
+                                    onchange="toggleFunThing(${f.id})"
+                                    class="w-5 h-5 cursor-pointer">
+                                <span class="flex-1 text-gray-200 font-medium ${f.completed ? 'line-through text-gray-600' : ''}">${f.text}</span>
+                                <button onclick="deleteFunThing(${f.id})" class="text-indigo-600 hover:text-indigo-500">🗑️</button>
+                            </div>
+                        `).join('')}
+                        ${state.funThings.length === 0 ? '<p class="text-center text-gray-600 py-12">NO ACTIVITIES</p>' : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==================== OTHERS PAGE ====================
+        function renderOthers() {
+            return `
+                <div class="bg-gradient-to-br from-gray-900 via-teal-950 to-black border-2 border-teal-900 overflow-hidden">
+                    <div class="bg-gradient-to-r from-teal-900/30 to-black border-b border-teal-800 p-6 flex items-center justify-between">
+                        <div>
+                            <h2 class="text-3xl font-bold text-gray-100 tracking-wide">DAILY TASKS</h2>
+                            <p class="text-xs text-teal-500 font-semibold mt-1">風の呼吸 • Wind Breathing</p>
+                        </div>
+                        <button onclick="addOtherThing()" class="bg-teal-900/50 hover:bg-teal-800 text-gray-100 px-4 md:px-6 py-2 border border-teal-700 font-semibold">
+                            ➕ ADD
+                        </button>
+                    </div>
+                    <div class="p-6 space-y-3">
+                        ${state.otherThings.map(o => `
+                            <div class="flex items-center gap-4 bg-gradient-to-r from-teal-950/20 to-black/50 p-4 border border-teal-900">
+                                <input type="checkbox" ${o.completed ? 'checked' : ''} 
+                                    onchange="toggleOtherThing(${o.id})"
+                                    class="w-5 h-5 cursor-pointer">
+                                <span class="flex-1 text-gray-200 font-medium ${o.completed ? 'line-through text-gray-600' : ''}">${o.text}</span>
+                                <button onclick="deleteOtherThing(${o.id})" class="text-teal-600 hover:text-teal-500">🗑️</button>
+                            </div>
+                        `).join('')}
+                        ${state.otherThings.length === 0 ? '<p class="text-center text-gray-600 py-12">NO TASKS</p>' : ''}
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==================== CALENDAR PAGE ====================
+        function renderCalendar() {
+            const {daysInMonth, startDay, month} = getDaysInMonth(state.currentMonth, state.currentYear);
+            const days = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'];
+            const today = new Date();
+            const isCurrentMonth = today.getMonth() === state.currentMonth && today.getFullYear() === state.currentYear;
+
+            let html = `
+                <div class="bg-gradient-to-br from-gray-900 via-red-950 to-black border-2 border-red-900 overflow-hidden">
+                    <div class="bg-gradient-to-r from-red-900/30 to-black border-b border-red-800 p-4 md:p-6">
+                        <div class="flex items-center justify-between mb-4 md:mb-6">
+                            <button onclick="changeMonth(-1)" class="bg-red-900/50 hover:bg-red-800 text-gray-100 p-2 md:p-3 border border-red-700 text-2xl">
+                                ‹
+                            </button>
+                            <div class="text-center">
+                                <h2 class="text-2xl md:text-4xl font-bold text-gray-100">${month}</h2>
+                                <p class="text-xs text-red-500 font-semibold mt-1">炎の呼吸 • Flame Breathing</p>
+                            </div>
+                            <button onclick="changeMonth(1)" class="bg-red-900/50 hover:bg-red-800 text-gray-100 p-2 md:p-3 border border-red-700 text-2xl">
+                                ›
+                            </button>
+                        </div>
+                        <div class="grid grid-cols-7 gap-1 md:gap-2 text-center">
+                            ${days.map(d => `<div class="font-bold text-xs md:text-sm py-2 md:py-3 text-gray-400">${d}</div>`).join('')}
+                        </div>
+                    </div>
+                    <div class="p-3 md:p-6 bg-black/30">
+                        <div class="grid grid-cols-7 gap-1 md:gap-3">
+            `;
+
+            for (let i = 0; i < startDay; i++) {
+                html += '<div class="aspect-square"></div>';
+            }
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const tasks = getTasksForDate(day);
+                const isToday = isCurrentMonth && today.getDate() === day;
+                let bgColor = 'bg-gray-900/50';
+                if (tasks.length > 0) {
+                    const hasStudy = tasks.some(t => t.cat === 'study');
+                    const hasCareer = tasks.some(t => t.cat === 'career');
+                    if (hasStudy && hasCareer) bgColor = 'bg-gradient-to-br from-red-600 to-purple-900';
+                    else if (hasStudy) bgColor = 'bg-blue-700';
+                    else if (hasCareer) bgColor = 'bg-purple-900';
+                }
+
+                html += `
+                    <div class="aspect-square border ${isToday ? 'border-orange-500 ring-1 md:ring-2 ring-orange-500' : 'border-gray-800'} 
+                        ${bgColor} hover:bg-gray-800/70 p-1 md:p-2 cursor-pointer group relative">
+                        <div class="text-sm md:text-lg font-bold ${tasks.length > 0 ? 'text-white' : isToday ? 'text-orange-500' : 'text-gray-400'}">
+                            ${day}
+                        </div>
+                        ${tasks.length > 0 ? `<div class="text-xs font-bold text-white bg-black/40 px-1 inline-block mt-1">${tasks.length}</div>` : ''}
+                        ${tasks.length > 0 ? `
+                            <div class="absolute hidden md:group-hover:block bg-black border-2 border-red-800 text-white text-sm p-3 top-full left-0 mt-2 w-64 z-10">
+                                <div class="font-bold text-red-500 mb-2">TASKS:</div>
+                                ${tasks.map(t => `
+                                    <div class="mb-2 flex items-center gap-2">
+                                        <div class="w-2 h-2 ${t.cat === 'study' ? 'bg-blue-600' : 'bg-purple-600'}"></div>
+                                        <span>${t.text}</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }
+
+            html += `
+                        </div>
+                        <div class="mt-6 md:mt-8 flex gap-4 md:gap-8 justify-center text-xs md:text-sm font-bold flex-wrap">
+                            <div class="flex items-center gap-2 md:gap-3">
+                                <div class="w-4 md:w-6 h-2 md:h-3 bg-blue-700 border border-blue-800"></div>
+                                <span class="text-gray-400">STUDY</span>
+                            </div>
+                            <div class="flex items-center gap-2 md:gap-3">
+                                <div class="w-4 md:w-6 h-2 md:h-3 bg-purple-900 border border-purple-800"></div>
+                                <span class="text-gray-400">CAREER</span>
+                            </div>
+                            <div class="flex items-center gap-2 md:gap-3">
+                                <div class="w-4 md:w-6 h-2 md:h-3 border-2 border-orange-500"></div>
+                                <span class="text-gray-400">TODAY</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            return html;
+        }
+
+        // ==================== FINANCE PAGE ====================
+        function renderFinance() {
+            const remaining = calcRemaining();
+            const spent = state.totalAmount - remaining;
+            const totalIOwe = state.iOwe.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+            const totalTheyOwe = state.theyOwe.reduce((s, i) => s + parseFloat(i.amount || 0), 0);
+
+            return `
+                <div class="space-y-6">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+                        <div class="bg-gradient-to-br from-green-900 to-black border-2 border-green-800 p-4 md:p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <span class="text-3xl md:text-4xl">💰</span>
+                                <span class="text-xs text-gray-500">TOTAL</span>
+                            </div>
+                            <p class="text-3xl md:text-4xl font-black text-green-500">₹${state.totalAmount.toFixed(2)}</p>
+                            <button onclick="editTotal()" class="mt-3 bg-green-900/50 text-gray-300 px-4 py-1 text-sm border border-green-800 hover:border-green-600">
+                                EDIT
+                            </button>
+                        </div>
+
+                        <div class="bg-gradient-to-br from-red-900 to-black border-2 border-red-800 p-4 md:p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <span class="text-3xl md:text-4xl">📉</span>
+                                <span class="text-xs text-gray-500">SPENT</span>
+                            </div>
+                            <p class="text-3xl md:text-4xl font-black text-red-500">₹${spent.toFixed(2)}</p>
+                        </div>
+
+                        <div class="bg-gradient-to-br from-blue-900 to-black border-2 border-blue-800 p-4 md:p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <span class="text-3xl md:text-4xl">📈</span>
+                                <span class="text-xs text-gray-500">REMAINING</span>
+                            </div>
+                            <p class="text-3xl md:text-4xl font-black text-blue-500">₹${remaining.toFixed(2)}</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-gradient-to-br from-gray-900 to-black border-2 border-orange-900 overflow-hidden">
+                        <div class="bg-gradient-to-r from-orange-900/30 to-black border-b border-orange-800 p-4 md:p-6 flex items-center justify-between">
+                            <div>
+                                <h2 class="text-xl md:text-2xl font-bold text-gray-100">EXPENSES</h2>
+                                <p class="text-xs text-orange-500 font-semibold mt-1">支出記録</p>
+                            </div>
+                            <button onclick="addExpense()" class="bg-orange-900/50 hover:bg-orange-800 text-gray-100 px-4 md:px-6 py-2 border border-orange-700 font-semibold text-sm md:text-base">
+                                ➕ ADD
+                            </button>
+                        </div>
+                        <div class="p-4 md:p-6 space-y-3 max-h-96 overflow-y-auto">
+                            ${state.expenses.map(e => `
+                                <div class="flex items-center justify-between bg-gradient-to-r from-orange-950/20 to-black/50 p-3 md:p-4 border border-orange-900 gap-2">
+                                    <div class="flex-1 min-w-0">
+                                        <p class="font-medium text-gray-200 truncate">${e.description}</p>
+                                        <p class="text-xs md:text-sm text-orange-600 font-semibold mt-1">${new Date(e.date).toLocaleDateString()}</p>
+                                    </div>
+                                    <div class="flex items-center gap-2 md:gap-4 flex-shrink-0">
+                                        <p class="text-lg md:text-2xl font-black text-red-500">₹${parseFloat(e.amount).toFixed(2)}</p>
+                                        <button onclick="deleteExpense(${e.id})" class="text-red-600 hover:text-red-500">🗑️</button>
+                                    </div>
+                                </div>
+                            `).join('')}
+                            ${state.expenses.length === 0 ? '<p class="text-center text-gray-600 py-8">NO EXPENSES</p>' : ''}
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                        <div class="bg-gradient-to-br from-gray-900 to-black border-2 border-red-900 overflow-hidden">
+                            <div class="bg-gradient-to-r from-red-900/30 to-black border-b border-red-800 p-4 flex items-center justify-between">
+                                <div>
+                                    <h2 class="text-lg md:text-xl font-bold text-gray-100">I OWE</h2>
+                                    <p class="text-sm text-red-500 font-bold mt-1">₹${totalIOwe.toFixed(2)}</p>
+                                </div>
+                                <button onclick="addIOwe()" class="bg-red-900/50 text-gray-100 px-3 md:px-4 py-2 border border-red-700 text-sm">
+                                    ➕
+                                </button>
+                            </div>
+                            <div class="p-4 space-y-2 max-h-64 overflow-y-auto">
+                                ${state.iOwe.map(d => `
+                                    <div class="flex items-center justify-between bg-red-950/20 p-3 border border-red-900">
+                                        <p class="font-medium text-gray-200 flex-1 truncate">${d.name}</p>
+                                        <div class="flex items-center gap-2 md:gap-3 flex-shrink-0">
+                                            <p class="font-black text-red-500 text-sm md:text-base">₹${parseFloat(d.amount).toFixed(2)}</p>
+                                            <button onclick="deleteIOwe(${d.id})" class="text-red-600">🗑️</button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                                ${state.iOwe.length === 0 ? '<p class="text-center text-gray-600 py-8 text-sm">NONE</p>' : ''}
+                            </div>
+                        </div>
+
+                        <div class="bg-gradient-to-br from-gray-900 to-black border-2 border-green-900 overflow-hidden">
+                            <div class="bg-gradient-to-r from-green-900/30 to-black border-b border-green-800 p-4 flex items-center justify-between">
+                                <div>
+                                    <h2 class="text-lg md:text-xl font-bold text-gray-100">THEY OWE ME</h2>
+                                    <p class="text-sm text-green-500 font-bold mt-1">₹${totalTheyOwe.toFixed(2)}</p>
+                                </div>
+                                <button onclick="addTheyOwe()" class="bg-green-900/50 text-gray-100 px-3 md:px-4 py-2 border border-green-700 text-sm">
+                                    ➕
+                                </button>
+                            </div>
+                            <div class="p-4 space-y-2 max-h-64 overflow-y-auto">
+                                ${state.theyOwe.map(d => `
+                                    <div class="flex items-center justify-between bg-green-950/20 p-3 border border-green-900">
+                                        <p class="font-medium text-gray-200 flex-1 truncate">${d.name}</p>
+                                        <div class="flex items-center gap-2 md:gap-3 flex-shrink-0">
+                                            <p class="font-black text-green-500 text-sm md:text-base">₹${parseFloat(d.amount).toFixed(2)}</p>
+                                            <button onclick="deleteTheyOwe(${d.id})" class="text-green-600">🗑️</button>
+                                        </div>
+                                    </div>
+                                `).join('')}
+                                ${state.theyOwe.length === 0 ? '<p class="text-center text-gray-600 py-8 text-sm">NONE</p>' : ''}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ==================== ACTION FUNCTIONS ====================
+        
+        // Study
+        function addSubject() {
+            const name = prompt('Subject name:');
+            if (name && name.trim()) {
+                state.subjects.push({ id: Date.now(), name: name.trim(), todos: [] });
+                save('subjects');
+                render();
+            }
+        }
+
+        function deleteSubject(id) {
+            if (confirm('Delete this subject and all its tasks?')) {
+                state.subjects = state.subjects.filter(s => s.id !== id);
+                save('subjects');
+                render();
+            }
+        }
+
+        function addSubjectTodo(subjectId) {
+            const text = prompt('Task:');
+            if (text && text.trim()) {
+                state.subjects = state.subjects.map(s => 
+                    s.id === subjectId 
+                        ? { ...s, todos: [...(s.todos || []), { id: Date.now(), text: text.trim(), completed: false }] }
+                        : s
+                );
+                save('subjects');
+                render();
+            }
+        }
+
+        function toggleSubjectTodo(subjectId, todoId) {
+            state.subjects = state.subjects.map(s => 
+                s.id === subjectId 
+                    ? { ...s, todos: s.todos.map(t => t.id === todoId ? { ...t, completed: !t.completed } : t) }
+                    : s
+            );
+            save('subjects');
+            render();
+        }
+
+        function deleteSubjectTodo(subjectId, todoId) {
+            if (confirm('Delete this task?')) {
+                state.subjects = state.subjects.map(s => 
+                    s.id === subjectId 
+                        ? { ...s, todos: s.todos.filter(t => t.id !== todoId) }
+                        : s
+                );
+                save('subjects');
+                render();
+            }
+        }
+
+        function addCollegeThing() {
+            const text = prompt('Task:');
+            if (!text || !text.trim()) return;
+            const deadline = prompt('Deadline (YYYY-MM-DD):', new Date().toISOString().split('T')[0]);
+            if (!deadline) return;
+            
+            state.collegeThings.push({ id: Date.now(), text: text.trim(), deadline, completed: false });
+            save('collegeThings');
+            render();
+        }
+
+        function toggleCollegeThing(id) {
+            state.collegeThings = state.collegeThings.map(c => c.id === id ? { ...c, completed: !c.completed } : c);
+            save('collegeThings');
+            render();
+        }
+
+        function deleteCollegeThing(id) {
+            if (confirm('Delete this task?')) {
+                state.collegeThings = state.collegeThings.filter(c => c.id !== id);
+                save('collegeThings');
+                render();
+            }
+        }
+
+        // Career
+        function addCareerGoal() {
+            const text = prompt('Goal:');
+            if (!text || !text.trim()) return;
+            const type = confirm('Weekly goal? (Cancel for Monthly)') ? 'week' : 'month';
+            const deadline = prompt('Deadline (YYYY-MM-DD):', new Date().toISOString().split('T')[0]);
+            if (!deadline) return;
+            
+            state.careerGoals.push({ id: Date.now(), text: text.trim(), type, deadline, completed: false });
+            save('careerGoals');
+            render();
+        }
+
+        function toggleCareerGoal(id) {
+            state.careerGoals = state.careerGoals.map(g => g.id === id ? { ...g, completed: !g.completed } : g);
+            save('careerGoals');
+            render();
+        }
+
+        function deleteCareerGoal(id) {
+            if (confirm('Delete this goal?')) {
+                state.careerGoals = state.careerGoals.filter(g => g.id !== id);
+                save('careerGoals');
+                render();
+            }
+        }
+
+        // Fun
+        function addFunThing() {
+            const text = prompt('Fun activity:');
+            if (text && text.trim()) {
+                state.funThings.push({ id: Date.now(), text: text.trim(), completed: false });
+                save('funThings');
+                render();
+            }
+        }
+
+        function toggleFunThing(id) {
+            state.funThings = state.funThings.map(f => f.id === id ? { ...f, completed: !f.completed } : f);
+            save('funThings');
+            render();
+        }
+
+        function deleteFunThing(id) {
+            if (confirm('Delete this?')) {
+                state.funThings = state.funThings.filter(f => f.id !== id);
+                save('funThings');
+                render();
+            }
+        }
+
+        // Others
+        function addOtherThing() {
+            const text = prompt('Task:');
+            if (text && text.trim()) {
+                state.otherThings.push({ id: Date.now(), text: text.trim(), completed: false });
+                save('otherThings');
+                render();
+            }
+        }
+
+        function toggleOtherThing(id) {
+            state.otherThings = state.otherThings.map(o => o.id === id ? { ...o, completed: !o.completed } : o);
+            save('otherThings');
+            render();
+        }
+
+        function deleteOtherThing(id) {
+            if (confirm('Delete this?')) {
+                state.otherThings = state.otherThings.filter(o => o.id !== id);
+                save('otherThings');
+                render();
+            }
+        }
+
+        // Finance
+        function editTotal() {
+            const newTotal = prompt('Enter total amount:', state.totalAmount);
+            if (newTotal && !isNaN(newTotal)) {
+                state.totalAmount = parseFloat(newTotal);
+                save('totalAmount');
+                render();
+            }
+        }
+
+        function addExpense() {
+            const description = prompt('Description:');
+            if (!description || !description.trim()) return;
+            const amount = prompt('Amount:');
+            if (!amount || isNaN(amount)) return;
+            const date = prompt('Date (YYYY-MM-DD):', new Date().toISOString().split('T')[0]);
+            if (!date) return;
+
+            state.expenses.push({ id: Date.now(), description: description.trim(), amount: parseFloat(amount), date });
+            save('expenses');
+            render();
+        }
+
+        function deleteExpense(id) {
+            if (confirm('Delete this expense?')) {
+                state.expenses = state.expenses.filter(e => e.id !== id);
+                save('expenses');
+                render();
+            }
+        }
+
+        function addIOwe() {
+            const name = prompt('Name:');
+            if (!name || !name.trim()) return;
+            const amount = prompt('Amount:');
+            if (!amount || isNaN(amount)) return;
+
+            state.iOwe.push({ id: Date.now(), name: name.trim(), amount: parseFloat(amount) });
+            save('iOwe');
+            render();
+        }
+
+        function deleteIOwe(id) {
+            if (confirm('Delete this entry?')) {
+                state.iOwe = state.iOwe.filter(i => i.id !== id);
+                save('iOwe');
+                render();
+            }
+        }
+
+        function addTheyOwe() {
+            const name = prompt('Name:');
+            if (!name || !name.trim()) return;
+            const amount = prompt('Amount:');
+            if (!amount || isNaN(amount)) return;
+
+            state.theyOwe.push({ id: Date.now(), name: name.trim(), amount: parseFloat(amount) });
+            save('theyOwe');
+            render();
+        }
+
+        function deleteTheyOwe(id) {
+            if (confirm('Delete this entry?')) {
+                state.theyOwe = state.theyOwe.filter(t => t.id !== id);
+                save('theyOwe');
+                render();
+            }
+        }
+
+        function changeMonth(delta) {
+            state.currentMonth += delta;
+            if (state.currentMonth < 0) {
+                state.currentMonth = 11;
+                state.currentYear--;
+            } else if (state.currentMonth > 11) {
+                state.currentMonth = 0;
+                state.currentYear++;
+            }
+            render();
+        }
+
+        // ==================== MAIN RENDER ====================
+        function render() {
+            const app = document.getElementById('app');
+            
+            if (state.page === 'home') {
+                app.innerHTML = renderHome();
+            } else {
+                let content = '';
+                switch(state.page) {
+                    case 'study': content = renderStudy(); break;
+                    case 'career': content = renderCareer(); break;
+                    case 'fun': content = renderFun(); break;
+                    case 'others': content = renderOthers(); break;
+                    case 'calendar': content = renderCalendar(); break;
+                    case 'finance': content = renderFinance(); break;
+                }
+
+                app.innerHTML = `
+                    <div class="min-h-screen bg-black p-4">
+                        <div class="max-w-6xl mx-auto">
+                            ${renderHeader()}
+                            ${content}
+                        </div>
+                    </div>
+                `;
+            }
+        }
+
+        // Initial render
+        render();
+    </script>
+</body>
+</html>
